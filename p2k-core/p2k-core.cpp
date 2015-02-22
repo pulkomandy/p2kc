@@ -196,9 +196,7 @@ usb_dev_handle *open_dev(char *tmp)
 			// get i/f details
 			curr_dev=usb_open(dev);
 			if (curr_dev>0) {
-#ifndef WIN32
-				if(!dev->config) i=usb_fetch_and_parse_descriptors(curr_dev); else i = 1;
-#endif				  
+				i = 1;
 				//i=usb_fetch_and_parse_descriptors(curr_dev);
 				if (i>0) {
 					if (isVerbose==1) {
@@ -1599,7 +1597,7 @@ int P2k_AT (usb_dev_handle *hdev)
 /////////////////////////////////////////////////////////////////////////////
 /*---------------------------------------------------------------------------
  * 
- * name: s_ Search on command table
+ * name: s_ Search on command table (only checks the first 4 bytes!)
  * @param
  * @return  found index, 0:not found
  */
@@ -1607,7 +1605,7 @@ unsigned int s_(char* str, char* cmp[])
 {
 	unsigned int i = 0;
 	while (cmp[i] != 0) {
-		if (strcmp(str, cmp[i]) == 0) return i+1;
+		if (strncmp(str, cmp[i], 4) == 0) return i+1;
 		i++;
 	}
 	return 0;
@@ -1972,7 +1970,7 @@ mode    changing phone state\n \
 								if (isSlave==0)fprintf(stderr,"%04u/00000 000",FilesNumber);
 								else fprintf(stderr,"%04u",FilesNumber); 
 								i=1;
-								FilesNumber=P2k_GetFilesNumber(hdev,LastVol);
+								FilesNumber=P2k_GetFilesNumber(hdev,(unsigned char*)LastVol);
 								ret=P2k_GetFilelistRecord(hdev,3,Recbuf);
 								if (bufFileList!=0) free(bufFileList);
 								bufFileList=(char *) malloc(RecordSize*(FilesNumber+2));
