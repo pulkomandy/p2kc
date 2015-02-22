@@ -97,7 +97,7 @@ int htoi(char s[])
  * @param headertext,pBuffer,size
  * if size==0 do nothing
  */
-void showhex(char *header, unsigned char *bytes, int size)
+static void showhex(const char *header, const unsigned char *bytes, const int size)
 {
 	int i,j;
 	char szBuf[17];
@@ -128,6 +128,12 @@ void showhex(char *header, unsigned char *bytes, int size)
 	if (i%16!=0) for (j=0; j<(16-i%16); j++) fprintf(stderr,"   ");
 	fprintf(stderr,"%s\n",szBuf);
 }
+
+static inline void showhex(const char* header, const char* bytes, const int size)
+{
+	showhex(header, (const unsigned char*)bytes, size);
+}
+
 /*---------------------------------------------------------------------------
  * 
  * name: set/get integer data into/from buffer
@@ -385,21 +391,20 @@ int Switch_ATtoP2kmode (usb_dev_handle *hdev)
  */
 int Switch_ModemtoP2kmode ()
 {
-	FILE *acm;
 	int t;
-//	long acm;
 	char ACMcmd[50];
 
 	fprintf (stderr," Switching to P2kmode (cca. 2-3 sec) \n");
 	if (isVerbose==1) showhex("_Sent  Data","AT+MODE=8\r\n", 11);
 #ifndef WIN32
+	int acm;
 	acm=open(ACMdevice, O_RDWR | O_NOCTTY | O_NONBLOCK );
 	if (acm<0)	{ fprintf(stderr,"!error: Modem device not found.\n"); return 0;}
 	
 	struct termios tio;
 	bzero(&tio, sizeof(tio));
 	tio.c_cflag= CRTSCTS | CS8 | CLOCAL | CREAD | O_NDELAY;
-	cfsetispeed(&tio, 115200);
+	cfsetispeed(&tio, B115200);
 	tio.c_cflag &= ~CRTSCTS;
 	tio.c_iflag = IGNPAR;
 	tio.c_oflag = 0;
@@ -452,6 +457,7 @@ int Switch_ModemtoP2kmode ()
 	close(acm);
 	sleep(1);
 #else
+  FILE* acm;
   DCB dcb;
   acm = CreateFileA ( ACMdevice,
                     GENERIC_READ | GENERIC_WRITE,
@@ -482,9 +488,7 @@ int Switch_ModemtoP2kmode ()
  */
 int Switch_ModemtoLANmode ()
 {
-	FILE *acm;
 	int t;
-//	long acm;
 	char ACMcmd[50];
 
 	if (strlen(LANcommand)==0) strcpy(LANcommand,"AT+MODE=8\r\n");
@@ -492,13 +496,14 @@ int Switch_ModemtoLANmode ()
 	fprintf (stderr," Switching to USBLAN mode (cca. 2-3 sec) \n");
 	if (isVerbose==1) showhex("_Sent  Data",LANcommand,strlen(LANcommand));
 #ifndef WIN32
+	int acm;
 	acm=open(ACMdevice, O_RDWR | O_NOCTTY | O_NONBLOCK );
 	if (acm<0)	{ fprintf(stderr,"!error: Modem device not found.\n"); return 0;}
 	
 	struct termios tio;
 	bzero(&tio, sizeof(tio));
 	tio.c_cflag= CRTSCTS | CS8 | CLOCAL | CREAD | O_NDELAY;
-	cfsetispeed(&tio, 115200);
+	cfsetispeed(&tio, B115200);
 	tio.c_cflag &= ~CRTSCTS;
 	tio.c_iflag = IGNPAR;
 	tio.c_oflag = 0;
@@ -551,6 +556,7 @@ int Switch_ModemtoLANmode ()
 	close(acm);
 	sleep(1);
 #else
+  FILE *acm;
   DCB dcb;
   acm = CreateFileA ( ACMdevice,
                     GENERIC_READ | GENERIC_WRITE,
@@ -581,7 +587,7 @@ int Switch_ModemtoLANmode ()
  */
 int Switch_MEMtoP2kmode (usb_dev_handle *hdev)
 {
-	unsigned char cmd[]={
+	char cmd[]={
 	0x55, 0x53, 0x42, 0x43, 0x08, 0xC0, 0xD9, 0x85,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0xD6,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -969,13 +975,13 @@ int P2k_SendCommand (usb_dev_handle *hdev,unsigned char *Sendbuf,unsigned int Se
 		// SendSendbuf
 		///////////////////////// req,rqtype,value,index,packet
 		if (isVerbose==1) showhex("_Sent  Data",Sendbuf,Sendsize);
-		ret=usb_control_msg(hdev, 0x41, 0x02, 0x00, TC_ifnum, Sendbuf, Sendsize, 1000);
+		ret=usb_control_msg(hdev, 0x41, 0x02, 0x00, TC_ifnum, (char*)Sendbuf, Sendsize, 1000);
 		if (ret<0) { printf ("!error sending ctrl data.\n"); return -1; }
 		t=time(NULL);
 		// Read status
 		while (time(NULL)-t<5)
 		{
-			ret=usb_control_msg(hdev,0xc1, 0x00, 0x00,TC_ifnum,PacketCount,sizeof(PacketCount),1000);
+			ret=usb_control_msg(hdev,0xc1, 0x00, 0x00,TC_ifnum,(char*)PacketCount,sizeof(PacketCount),1000);
 			if (isVerbose==1) showhex("_Recvd Stat",PacketCount,ret);
 			if (ret>2) break;
 			usleep(100);
@@ -984,7 +990,7 @@ int P2k_SendCommand (usb_dev_handle *hdev,unsigned char *Sendbuf,unsigned int Se
 		// Calculate answer size
 		recsize=get_cmd_size(PacketCount);
 		// Read answer
-		ret=usb_control_msg(hdev,0xc1, 0x01, 0x01,TC_ifnum,Recbuf,recsize,1000);
+		ret=usb_control_msg(hdev,0xc1, 0x01, 0x01,TC_ifnum,(char*)Recbuf,recsize,1000);
 		if (ret<=0) { printf ("!error: receiving ctrl data.\n"); return -1; }
 		if (isVerbose==1) showhex("_Recvd Data",Recbuf,ret);
 		// Check answer
@@ -1006,11 +1012,11 @@ int P2k_SendCommand (usb_dev_handle *hdev,unsigned char *Sendbuf,unsigned int Se
 		memcpy (P2k05buf+10,Sendbuf+4,2); // argsize
 		memcpy (P2k05buf+12,Sendbuf+8,Sendsize-8); // data payload
 		// Send Sendbuf
-		ret=usb_bulk_write(hdev, TCep_out,P2k05buf,Sendsize+4, 1000);
+		ret=usb_bulk_write(hdev, TCep_out,(char*)P2k05buf,Sendsize+4, 1000);
 		if (ret<1) { printf ("!error sending bulk data.\n"); return -1; }
 		if (isVerbose==1) showhex("_Sent  Data",P2k05buf,ret);
 		
-		ret=usb_bulk_read(hdev, TCep_in, P2k05buf,0x1000, 1000);
+		ret=usb_bulk_read(hdev, TCep_in, (char*)P2k05buf,0x1000, 1000);
 		if (ret<1) { printf ("!error reading P2k05 answer.\n"); return -1; }
 		if (isVerbose==1) showhex("_Recvd Data",P2k05buf,ret);
 		
@@ -1103,7 +1109,7 @@ int P2k_GetFreespace(usb_dev_handle *hdev,unsigned char *Vol)
  */
 int P2k_GetFilesNumber(usb_dev_handle *hdev,unsigned char *Vol)
 {
-	int i,j;
+	unsigned int i,j;
 	//unsigned char Sendbuf[strlen(Vol)+18];
 	unsigned char Sendbuf[0x108]={
 	0xFF, 0xFF, // 2 byte packetID
@@ -1117,7 +1123,7 @@ int P2k_GetFilesNumber(usb_dev_handle *hdev,unsigned char *Vol)
 	0xFF, 0xFE,
 	0x00, '*' };
 	Sendbuf[15]=Vol[0];
-	if (strlen(Vol)!=1) { 
+	if (strlen((char*)Vol)!=1) { 
 		i=0;j=0;
 		while (Vol[i]!='*') {
 			Sendbuf[j+14]=0;
@@ -1127,7 +1133,7 @@ int P2k_GetFilesNumber(usb_dev_handle *hdev,unsigned char *Vol)
 		Sendbuf[j+14]=0xFF;
 		Sendbuf[j+15]=0xFE;
 		j=j+2;
-		while (i<strlen(Vol)) {
+		while (i<strlen((char*)Vol)) {
 			Sendbuf[j+14]=0;
 			Sendbuf[j+15]=Vol[i];
 			i++;j=j+2;
@@ -1258,13 +1264,13 @@ int FSAC_DelFile(usb_dev_handle *hdev,unsigned char *fName)
 	//0x00, 0x00, // zero separator
 	//0x00, 0x00, 0x00, 0x00,		// FSAC command 
 	//0x00, 0x00, 0x00, 0x00 };	// extra bytes (cmd args)
-	memcpy(Sendbuf+12,fName,strlen(fName));
+	memcpy(Sendbuf+12,fName,strlen((char*)fName));
 	setInt16(Sendbuf+0,0xFFFF); // 2 byte packetID
 	setInt16(Sendbuf+2,0x004A); // P2k cmd (0x4A:FSAC)
-	setInt16(Sendbuf+4,strlen(fName)+4);		// argsize (extra bytes)
+	setInt16(Sendbuf+4,strlen((char*)fName)+4);		// argsize (extra bytes)
 	setInt16(Sendbuf+6,0);		// zero separator
 	setInt32(Sendbuf+8,0x00000005);// FSAC command 
-	if (P2k_SendCommand (hdev,Sendbuf,strlen(fName)+12,Recbuf)==-1) return 0;
+	if (P2k_SendCommand (hdev,Sendbuf,strlen((char*)fName)+12,Recbuf)==-1) return 0;
 	if (isSlave==1) fprintf(stderr,"\n\r");
 	return 1;
 }
@@ -1478,12 +1484,12 @@ int P2k_DownloadSeem (usb_dev_handle *hdev,int SeemNum,int SeemRec,char *dest)
  * @param hdev,filename
  * @return
  */
-int P2k_UploadSeem (usb_dev_handle *hdev,unsigned char *filename)
+int P2k_UploadSeem (usb_dev_handle *hdev, char *filename)
 {
 	int i,SeemNum,SeemRec,fsize;
 	FILE *hFile;
 	char *buffer;
-	unsigned char tmp1[1000],tmp2[1000],filename2[1000];
+	char tmp1[1000],tmp2[1000], filename2[1000];
 	char *string_ptr;
 	char *string_ptr2;
 
@@ -1510,7 +1516,7 @@ int P2k_UploadSeem (usb_dev_handle *hdev,unsigned char *filename)
 		fread(buffer,1,fsize,hFile);
 		fclose (hFile);
 		// upload seem data
-		i=P2k_WriteSeem(hdev,SeemNum,SeemRec,0,fsize,buffer);
+		i=P2k_WriteSeem(hdev,SeemNum,SeemRec,0,fsize,(unsigned char*)buffer);
 		free (buffer);
 		return i;
 	}
@@ -1593,7 +1599,7 @@ int P2k_AT (usb_dev_handle *hdev)
 /////////////////////////////////////////////////////////////////////////////
 /*---------------------------------------------------------------------------
  * 
- * name: s_ Search on command table (check only first 4 char!!)
+ * name: s_ Search on command table
  * @param
  * @return  found index, 0:not found
  */
@@ -1601,8 +1607,7 @@ unsigned int s_(char* str, char* cmp[])
 {
 	unsigned int i = 0;
 	while (cmp[i] != 0) {
-		//if (strcmp(str, cmp[i]) == 0) return i+1;
-		if (getInt32(str)==getInt32(cmp[i])) return i+1;
+		if (strcmp(str, cmp[i]) == 0) return i+1;
 		i++;
 	}
 	return 0;
@@ -1616,7 +1621,8 @@ unsigned int s_(char* str, char* cmp[])
 int main(int argc, char *argv[])
 {
 	int i,j,k,t,ret,SeemNum,SeemRec,filesize;
-	char cmd[1000],ArgCmd[1000],tmp1[1000],tmp2[1000],tmp3[1000],filenameW[1000];
+	char cmd[1000],ArgCmd[1000],tmp1[1000],tmp3[1000],filenameW[1000];
+	unsigned char tmp2[1000];
 	char * cmdLine;
 	char *string_ptr;
 	char * bufFileList,* bufFileList2;
@@ -1785,8 +1791,8 @@ mode    changing phone state\n \
 					}
 					else {
 						// get info for 1 volume
-						i=P2k_GetFreespace (hdev,ArgCmd);
-						FilesNumber=P2k_GetFilesNumber(hdev,ArgCmd);
+						i=P2k_GetFreespace (hdev,(unsigned char*)ArgCmd);
+						FilesNumber=P2k_GetFilesNumber(hdev,(unsigned char*)ArgCmd);
 						strcpy(LastVol,ArgCmd);
 						//LastVol[0]=ArgCmd[0];
 						fprintf(stderr," Volume: /%s  Free space: %u bytes, %u files found.\n",ArgCmd,i,FilesNumber);
@@ -1803,7 +1809,7 @@ mode    changing phone state\n \
 					sscanf(cmd,"seem %s %s %s %s",ArgCmd,tmp1,tmp2,tmp3);
 					switch (ArgCmd[0]) {
 						case 'd': 
-							SeemNum=htoi(tmp1); SeemRec=htoi(tmp2);
+							SeemNum=htoi(tmp1); SeemRec=htoi((char*)tmp2);
 							// download seem to file
 							fprintf(stderr,"Download:%s%04x_%04x.seem",tmp3,SeemNum,SeemRec);
 							P2k_DownloadSeem(hdev,SeemNum,SeemRec,tmp3);
@@ -1829,23 +1835,23 @@ mode    changing phone state\n \
 							// download file
 							if (RecordSize==0) {
 								// if Filelist not loaded at all
-								strcpy(tmp2,"b/*");
+								strcpy((char*)tmp2,"b/*");
 								string_ptr=strpbrk(tmp1,".");
 								if (string_ptr==NULL) break;
-								strcat(tmp2,string_ptr);
+								strcat((char*)tmp2,string_ptr);
 								tmp2[0]=tmp1[1];
 								fprintf(stderr,"Filelist not loaded. Get it with %s filter.\n",tmp2);
 								FilesNumber=P2k_GetFilesNumber(hdev,tmp2);
-								strcpy(LastVol,tmp2);
+								strcpy(LastVol,(char*)tmp2);
 								fprintf(stderr," Volume: /%s   %u files found.\n",tmp2,FilesNumber);
 								// get filelist
 								if (isSlave==0) fprintf(stderr,"%04u/00000 000",FilesNumber);
 								else fprintf(stderr,"%04u",FilesNumber);  
 								i=1;
-								FilesNumber=P2k_GetFilesNumber(hdev,LastVol);
+								FilesNumber=P2k_GetFilesNumber(hdev,(unsigned char*)LastVol);
 								ret=P2k_GetFilelistRecord(hdev,3,Recbuf);
 								if (bufFileList!=0) free(bufFileList);
-								bufFileList=(unsigned char *) malloc(RecordSize*(FilesNumber+2));
+								bufFileList=(char *) malloc(RecordSize*(FilesNumber+2));
 								ptrFileList=bufFileList;
 								StayQuiet=1;
 								while (ret!=0) {
@@ -1867,7 +1873,11 @@ mode    changing phone state\n \
 								i=1;
 								j=0;
 								while (bufFileList+j<ptrFileList) {
-									fprintf(stderr,"%02x %02x %08u %s\n",bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5],getInt32(bufFileList+j+RecordSize-4),bufFileList+j);
+									fprintf(stderr,"%02x %02x %08u %s\n",
+										bufFileList[j+RecordSize-7],
+										bufFileList[j+RecordSize-5],
+										getInt32((uint8_t*)bufFileList+j+RecordSize-4),
+										bufFileList+j);
 									j=j+RecordSize;
 								}
 							}
@@ -1877,24 +1887,24 @@ mode    changing phone state\n \
 								if (strcmp(tmp1,bufFileList+i)==0) break; //found
 								i=i+RecordSize;
 							}
-							filesize=getInt32(bufFileList+i+RecordSize-4);
+							filesize=getInt32((uint8_t*)bufFileList+i+RecordSize-4);
 							fprintf(stderr,"Reading %s %02x %08u bytes, chunks:",bufFileList+i,bufFileList[i+RecordSize-7],filesize);
-							filebuffer=(unsigned char *) malloc(filesize);
+							filebuffer=(char *) malloc(filesize);
 							i=FSAC_OpenFile(hdev,tmp1,bufFileList[i+RecordSize-7]);
 							if (i==0) { fprintf (stderr,"!error: opening file!\n"); break; }
 							i=FSAC_SeekFile(hdev,0,0);
 							if (i==0) fprintf (stderr,"!error: seeking file!\n"); //i=FSAC_CloseFile(hdev); break; }
-							i=FSAC_ReadFile(hdev,filebuffer,filesize);
+							i=FSAC_ReadFile(hdev,(unsigned char*)filebuffer,filesize);
 							if (i==0) { fprintf (stderr,"!error: reading file!\n"); i=FSAC_CloseFile(hdev); break; }
 							i=FSAC_CloseFile(hdev);
 							if (i==0) { fprintf (stderr,"!error: closing file!\n"); break; } 
 							// prepare filename tmp1->filename
 							filename=strrchr(tmp1,'/');
 							// write to hdd
-							if (j==2) strcpy(tmp2,"."); // if dest folder omitted
-							strcat(tmp2,filename);
+							if (j==2) strcpy((char*)tmp2,"."); // if dest folder omitted
+							strcat((char*)tmp2,filename);
 							//fprintf(stderr,"%s\n",tmp2);
-							hFile=fopen(tmp2,"wb+");
+							hFile=fopen((char*)tmp2,"wb+");
 							fwrite(filebuffer,1,filesize,hFile);
 							fclose(hFile);
 							//showhex("file",filebuffer,27);
@@ -1914,7 +1924,7 @@ mode    changing phone state\n \
 							fclose(hFile);
 							// make full target string
 							filenameW[0]=0;
-							strcpy(filenameW,tmp2);
+							strcpy(filenameW,(char*)tmp2);
 							filename=strrchr(tmp1,'/');
 							if (filename!=NULL){ filename++;strcat(filenameW,filename);}
 							else strcat(filenameW,tmp1);
@@ -1922,33 +1932,33 @@ mode    changing phone state\n \
 							//fprintf(stderr,"%s\n",filenameW);
 							i=FSAC_OpenFile(hdev,filenameW,0);
 							if (i==0) { fprintf (stderr,"!error: creating file!\n"); break; }
-							i=FSAC_WriteFile(hdev,filebuffer,filesize);
+							i=FSAC_WriteFile(hdev,(unsigned char*)filebuffer,filesize);
 							if (i==0) { fprintf (stderr,"!error: writing file!\n"); break; }
 							i=FSAC_CloseFile(hdev);
 							if (i==0) { fprintf (stderr,"!error: closing file!\n"); break; } 
 							free(filebuffer);
 							// actualize filelist mem image
-							bufFileList2=(unsigned char *) malloc(RecordSize*(FilesNumber+2));
+							bufFileList2=(char *) malloc(RecordSize*(FilesNumber+2));
 							ptrFileList=bufFileList2+RecordSize*FilesNumber;
 							memcpy(bufFileList2,bufFileList,RecordSize*FilesNumber);
 							free(bufFileList);
 							bufFileList=bufFileList2;
 							FilesNumber++;
 							strcpy(ptrFileList,filenameW);
-							setInt32(ptrFileList+RecordSize-4,filesize);
+							setInt32((uint8_t*)ptrFileList+RecordSize-4,filesize);
 							ptrFileList[RecordSize-7]=0;
 							ptrFileList[RecordSize-5]=7;
 							ptrFileList=ptrFileList+RecordSize;
 							break;
 						case 'r': 
 							// remove file
-							i=FSAC_DelFile(hdev,tmp1);
+							i=FSAC_DelFile(hdev,(uint8_t*)tmp1);
 							if (i==0) { fprintf (stderr,"!error: removing file!\n"); break; } 
 							fprintf(stderr,"Removing %s\n",tmp1);
 							break;
 						case 'a': 
 							// set attribs
-							i=FSAC_OpenFile(hdev,tmp1,htoi(tmp2));
+							i=FSAC_OpenFile(hdev,tmp1,htoi((char*)tmp2));
 							if (i==0) { fprintf (stderr,"!error: opening file!\n"); break; } 
 							i=FSAC_CloseFile(hdev);
 							if (i==0) { fprintf (stderr,"!error: closing file!\n"); break; } 
@@ -1965,7 +1975,7 @@ mode    changing phone state\n \
 								FilesNumber=P2k_GetFilesNumber(hdev,LastVol);
 								ret=P2k_GetFilelistRecord(hdev,3,Recbuf);
 								if (bufFileList!=0) free(bufFileList);
-								bufFileList=(unsigned char *) malloc(RecordSize*(FilesNumber+2));
+								bufFileList=(char *) malloc(RecordSize*(FilesNumber+2));
 								ptrFileList=bufFileList;
 								StayQuiet=1;
 								while (ret!=0) {
@@ -1987,8 +1997,8 @@ mode    changing phone state\n \
 								i=1;
 								j=0;
 								while (bufFileList+j<ptrFileList) {
-									if (isSlave==0) fprintf(stderr,"%02x %02x %08u %s\n",bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5],getInt32(bufFileList+j+RecordSize-4),bufFileList+j);
-									else fprintf(hFile,"%s\n%u\n%02x %02x\n",bufFileList+j,getInt32(bufFileList+j+RecordSize-4),bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5]);
+									if (isSlave==0) fprintf(stderr,"%02x %02x %08u %s\n",bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5],getInt32((uint8_t*)bufFileList+j+RecordSize-4),bufFileList+j);
+									else fprintf(hFile,"%s\n%u\n%02x %02x\n",bufFileList+j,getInt32((uint8_t*)bufFileList+j+RecordSize-4),bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5]);
 									j=j+RecordSize;
 								}
 							fclose(hFile);
@@ -2127,7 +2137,7 @@ mode    changing phone state\n \
 				fprintf(stderr,"At Ow Filesize Filename with path\n");i=1;
 				j=0;
 				while (bufFileList+j<ptrFileList) {
-					fprintf(stderr,"%02x %02x %08u %s\n",bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5],getInt32(bufFileList+j+RecordSize-4),bufFileList+j);
+					fprintf(stderr,"%02x %02x %08u %s\n",bufFileList[j+RecordSize-7],bufFileList[j+RecordSize-5],getInt32((uint8_t*)bufFileList+j+RecordSize-4),bufFileList+j);
 					j=j+RecordSize;
 				}
 				break;
